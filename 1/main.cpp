@@ -3,6 +3,7 @@
 #include <cassert>
 #include <math.h>
 
+#include <mpi.h>
 
 const double EPS = 1e-5;
 
@@ -27,6 +28,29 @@ void fill(double* x, int N, double value) {
     for (int i = 0; i < N; i++) {
         x[i] = value;
     }
+}
+
+void dump(double* x, int N) {
+    if (N < 10) {
+        for (int i = 0; i < N; i++) {
+            std::cout << x[i] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void FillInitialValues(double* A, double* b, int N) {
+    double* u = new double[N];
+    fill(A, N*N, 1.0);
+    for (int i = 0; i < N; i++) {
+        A[i * N + i] = 2.0;
+    }
+    for (int i = 0; i < N; i++) {
+        u[i] = sin(2*M_PI*i / N) * 100;
+    }
+    mulMV(A, u, N, b);
+    dump(u, N);
+    delete[] u;
 }
 
 void solve(const double* A, const double* b, int N, double* x) {
@@ -85,48 +109,78 @@ void solve(const double* A, const double* b, int N, double* x) {
     delete[] buf1;
 }
 
-int main() {
+int main(int argc, char** argv) {
     const int N = 5;
-    // === 1 ===
-    // Matrix A(N);
-    // A.init(1.0);
-    // for (int i = 0; i < N; i++) {
-    //     A.set(i, i, 2.0);
-    // }
-    // VD b(N, N+1);
-    // VD res = solve(A, b);
 
-    // === 2 ===
-    double* A = new double[N*N];
-    double* u = new double[N];
-    double* b = new double[N];
-    double* res = new double[N];
+    // === Initialize MPI ===
+
+    int p_rank;
+    int p_count;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &p_count);
+    MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
+
+    const int MAX_PART_SIZE = N / p_count + 1;
+
+    // === Load data and split data across processes ===
     
-    fill(A, N*N, 1.0);
-    for (int i = 0; i < N; i++) {
-        A[i * N + i] = 2.0;
+    double* A_part = new double[MAX_PART_SIZE * N];
+    double* b_part = new double[MAX_PART_SIZE];
+
+    double* A;
+    double* b;
+    double* res;
+
+    if (p_rank == 0) {
+        A = new double[N*N];
+        b = new double[N];
+        res = new double[N];
+        FillInitialValues(A, b, N);
     }
-    for (int i = 0; i < N; i++) {
-        u[i] = sin(2*M_PI*i / N) * 100;
+
+    int* b_starts = new int[p_count];
+    int* b_sizes = new int[p_count];
+    int* A_starts = new int[p_count];
+    int* A_sizes = new int[p_count];
+
+    if (p_rank == 0) {
+        int b_offset = 0;
+        for (int i = 0; i < p_count; i++) {
+            b_sizes[i] = N / p_count;
+            // To remove any gaps
+            if (i < N % p_count) {
+                b_sizes[i]++;
+            }
+            b_starts[i] = b_offset;
+            b_offset += b_sizes[i];
+            // By rows
+            A_starts[i] = b_starts[i] * N;
+            A_sizes[i] = b_sizes[i] * N;
+        }
     }
-    mulMV(A, u, N, b);
+
+    std::cout << "process " << p_rank << " will do " << b_starts[p_rank] << "-" << b_starts[p_rank]+b_sizes[p_rank]  << std::endl;
+
+    MPI_Scatterv(A, A_sizes, A_starts, MPI_DOUBLE, A_part, A_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(b, b_sizes, b_starts, MPI_DOUBLE, b_part, b_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // !TODO: change to "by parts"
     solve(A, b, N, res);
-    std::cout << "VECTOR u: " << std::endl;
-    for (int i = 0; i < N; i++) {
-        std::cout << u[i] << " ";
-    }
-    std::cout << std::endl;
 
     std::cout << "RESULT" << std::endl;
-    for (int i = 0; i < N; i++) {
-        std::cout << res[i] << " ";
-    }
-    std::cout << std::endl;
+    dump(res, N);
 
-    delete[] A;
-    delete[] u;
-    delete[] b;
-    delete[] res;
+    if (p_rank == 0) {
+        delete[] A;
+        delete[] b;
+        delete[] res;
+    }
+
+    delete[] b_starts;
+    delete[] b_sizes;
+    delete[] A_starts;
+    delete[] A_sizes;
 
     return 0;
 }
