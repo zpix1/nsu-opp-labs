@@ -110,7 +110,7 @@ void solve(const double* A, const double* b, int N, double* x) {
 }
 
 int main(int argc, char** argv) {
-    const int N = 5;
+    const int N = 10;
 
     // === Initialize MPI ===
 
@@ -130,12 +130,11 @@ int main(int argc, char** argv) {
 
     double* A;
     double* b;
-    double* res;
+    double* x = new double[N];;
 
     if (p_rank == 0) {
         A = new double[N*N];
         b = new double[N];
-        res = new double[N];
         FillInitialValues(A, b, N);
     }
 
@@ -144,20 +143,18 @@ int main(int argc, char** argv) {
     int* A_starts = new int[p_count];
     int* A_sizes = new int[p_count];
 
-    if (p_rank == 0) {
-        int b_offset = 0;
-        for (int i = 0; i < p_count; i++) {
-            b_sizes[i] = N / p_count;
-            // To remove any gaps
-            if (i < N % p_count) {
-                b_sizes[i]++;
-            }
-            b_starts[i] = b_offset;
-            b_offset += b_sizes[i];
-            // By rows
-            A_starts[i] = b_starts[i] * N;
-            A_sizes[i] = b_sizes[i] * N;
+    int b_offset = 0;
+    for (int i = 0; i < p_count; i++) {
+        b_sizes[i] = N / p_count;
+        // To remove any gaps
+        if (i < N % p_count) {
+            b_sizes[i]++;
         }
+        b_starts[i] = b_offset;
+        b_offset += b_sizes[i];
+        // By rows
+        A_starts[i] = b_starts[i] * N;
+        A_sizes[i] = b_sizes[i] * N;
     }
 
     std::cout << "process " << p_rank << " will do " << b_starts[p_rank] << "-" << b_starts[p_rank]+b_sizes[p_rank]  << std::endl;
@@ -166,17 +163,94 @@ int main(int argc, char** argv) {
     MPI_Scatterv(b, b_sizes, b_starts, MPI_DOUBLE, b_part, b_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // !TODO: change to "by parts"
-    solve(A, b, N, res);
+    // YOU ARE HERE
+    double* r = new double[N];
+    double* z = new double[N];
+    double* Az = new double[N];
+    double* part_buf0 = new double[b_sizes[p_rank]];
+    double* part_buf1 = new double[b_sizes[p_rank]];
+    double* full_buf = new double[N];
 
-    std::cout << "RESULT" << std::endl;
-    dump(res, N);
+    // 1 - initialization
+    // r0 = b0 0- Ax0
+    // z0 = r0
+    double r_square = 0;
+    double b_square = 0;
+
+    double b_square_part = 0;
+    for (int i = 0; i < b_sizes[p_rank]; i++) {
+        part_buf0[i] = 0;
+        for (int j = 0; j < N; j++) {
+            part_buf0[i] += b_part[i] - A_part[i * N + j] * x[j];
+        }
+        part_buf1[i] = part_buf0[i];
+        b_square_part += b_part[i] * b_part[i];
+    }
+    MPI_Reduce(&b_square_part, &b_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, r, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgatherv(part_buf1, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+    
+    // 2 - main cycle
+    // TODO: Parallelize fully
+    int converges = false;
+    while (!converges) {
+        // get Az
+        for (int i = 0; i < b_sizes[p_rank]; i++) {
+            part_buf0[i] = 0;
+            for (int j = 0; j < N; j++) {
+                part_buf0[i] += A_part[i * N + j] * z[j];
+            }
+        }
+        MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+
+        if (p_rank == 0) {
+            double r_square = 0;
+            r_square = scalar(r, r, N);
+            double alpha = r_square / scalar(Az, z, N);
+            
+            for (int i = 0; i < N; i++) {
+                x[i] = x[i] + alpha * z[i];
+            }
+            // full_buf - z_n+1
+            for (int i = 0; i < N; i++) {
+                full_buf[i] = r[i] - alpha * Az[i];
+            }
+            double r_new_square = scalar(full_buf, full_buf, N);
+            double beta = r_new_square / r_square;
+            for (int i = 0; i < N; i++) {
+                r[i] = full_buf[i];
+            }
+            r_square = r_new_square;
+            for (int i = 0; i < N; i++) {
+                z[i] = r[i] + beta * z[i];
+            }
+            if ((r_square / b_square) < EPS) {
+                converges = true;
+            }
+        }
+        
+        MPI_Bcast(&converges, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    }
+
+    if (p_rank == 0) {
+        std::cout << "RESULT" << std::endl;
+        dump(x, N);
+    }
 
     if (p_rank == 0) {
         delete[] A;
         delete[] b;
-        delete[] res;
     }
 
+    MPI_Finalize();
+
+    delete[] z;
+    delete[] Az;
+    delete[] part_buf0;
+    delete[] part_buf1;
+    delete[] full_buf;
+
+    delete[] x;
     delete[] b_starts;
     delete[] b_sizes;
     delete[] A_starts;

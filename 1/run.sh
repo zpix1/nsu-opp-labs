@@ -1,3 +1,3 @@
 #!/bin/bash
-g++ main.cpp -o main
-./main
+mpic++ main.cpp -o main
+mpirun -np 2 ./main
