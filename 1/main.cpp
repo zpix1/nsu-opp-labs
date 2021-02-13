@@ -52,7 +52,7 @@ void FillInitialValues(double* A, double* b, int N) {
         A[i * N + i] = 2.0;
     }
     for (int i = 0; i < N; i++) {
-        u[i] = sin(2*M_PI*i / N) * 100;
+        u[i] = i+1;
     }
     mulMV(A, u, N, b);
     std::cout << "b: " << std::endl;
@@ -121,7 +121,7 @@ void solve(const double* A, const double* b, int N, double* x) {
 
 
 int main(int argc, char** argv) {
-    const int N = 10;
+    const int N = 512;
 
     // === Initialize MPI ===
 
@@ -188,11 +188,11 @@ int main(int argc, char** argv) {
 
     double b_square_part = 0;
     for (int i = 0; i < b_sizes[p_rank]; i++) {
-        DEBUG(b_part[i]);
         part_buf0[i] = 0;
         for (int j = 0; j < N; j++) {
-            part_buf0[i] += b_part[i] - A_part[i * N + j] * x[j];
+            part_buf0[i] += A_part[i * N + j] * x[j];
         }
+        part_buf0[i] = b_part[i] - part_buf0[i];
         part_buf1[i] = part_buf0[i];
         b_square_part += b_part[i] * b_part[i];
     }
@@ -200,40 +200,27 @@ int main(int argc, char** argv) {
     MPI_Allreduce(&b_square_part, &b_square, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, r, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf1, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
-
-    
     
     r_square = scalar(r, r, N);
-    DEBUG(b_square_part);
+
     // 2 - main cycle
-    // TODO: Parallelize fully
     int converges = false;
     while (!converges) {
         // get Az
-        // for (int i = 0; i < b_sizes[p_rank]; i++) {
-        //     part_buf0[i] = 0;
-        //     for (int j = 0; j < N; j++) {
-        //         part_buf0[i] += A_part[i * N + j] * z[j];
-        //     }
-        // }
-        // MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+        for (int i = 0; i < b_sizes[p_rank]; i++) {
+            part_buf0[i] = 0;
+            for (int j = 0; j < N; j++) {
+                part_buf0[i] += A_part[i * N + j] * z[j];
+            }
+        }
+        MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
         
-        mulMV(A, z, N, Az);
-
-        DEBUG("Az");
-        dump(Az, N);
-
-        DEBUG("z");
-        dump(z, N);
-
-        DEBUG("r");
-        dump(r, N);
-
         double alpha = r_square / scalar(Az, z, N);
 
         for (int i = 0; i < N; i++) {
             x[i] = x[i] + alpha * z[i];
         }
+
         // full_buf - z_n+1
         for (int i = 0; i < N; i++) {
             full_buf[i] = r[i] - alpha * Az[i];
