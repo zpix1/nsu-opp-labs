@@ -46,22 +46,30 @@ void dump(double* x, int N, std::string fname) {
 }
 
 void FillInitialValues(double* A, double* b, int N) {
-    double* u = new double[N];
-    fill(A, N*N, 1.0);
+    srand(5);
     for (int i = 0; i < N; i++) {
-        A[i * N + i] = 2.0;
+        for (int j = 0; j <= i; j++) {
+            A[i * N + j] = rand() % 100;
+            A[j * N + i] = A[i * N + j];
+        }
     }
     for (int i = 0; i < N; i++) {
-        u[i] = sin(M_PI * 2 * i / N);
+        A[i * N + i] += 500.0;
     }
-    mulMV(A, u, N, b);
-    dump(u, N, "good_values.bin");
-    delete[] u;
+    for (int i = 0; i < N; i++) {
+        b[i] = rand() % 100;
+    }
+    // for (int i = 0; i < N; i++) {
+    //     for (int j = 0; j < N; j++) {
+    //         std::cout << A[i * N + j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
 }
 
 int main(int argc, char** argv) {
     double start, end;
-    const int N = 20000;
+    const int N = 1000;
 
     // === Initialize MPI ===
 
@@ -148,11 +156,13 @@ int main(int argc, char** argv) {
     r_square = scalar(r, r, N);
 
     // 2 - main cycle
+    int i = 0;
     int converges = false;
     while (!converges) {
-        if (p_rank == 0) {
-            std::cout << "ITER" << std::endl;
-        }
+        // if (p_rank == 0) {
+        //     std::cout << "ITER " << i << std::endl;
+        //     i++;
+        // }
         // get Az
         for (int i = 0; i < b_sizes[p_rank]; i++) {
             part_buf0[i] = 0;
@@ -177,21 +187,26 @@ int main(int argc, char** argv) {
         for (int i = 0; i < N; i++) {
             r[i] = full_buf[i];
         }
-        r_square = r_new_square;
         
         for (int i = 0; i < N; i++) {
             z[i] = r[i] + beta * z[i];
         }
-        if ((r_square / b_square) < EPS) {
+        if ((sqrt(r_square) / sqrt(b_square)) < EPS) {
             converges = true;
         }
+        r_square = r_new_square;
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
     if (p_rank == 0) {
         end = MPI_Wtime();
         std::cout << "DONE: " << p_count << ": " << end - start << std::endl;
-        dump(x, N, "output.bin");
+        dump(x, N, "output.dat");
+
+        // mulMV(A, x, N, z);
+        // for (int i = 0; i < N; i++) {
+        //     std::cout << fabs(z[i] - b[i]) << std::endl;
+        // }
     }
 
     if (p_rank == 0) {
