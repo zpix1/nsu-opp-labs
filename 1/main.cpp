@@ -5,6 +5,12 @@
 
 #include <mpi.h>
 
+int p_rank;
+int p_count;
+
+#define DEBUG(var) \
+            do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
+
 const double EPS = 1e-5;
 
 void mulMV(const double* A, const double* x, int N, double* res)  {
@@ -31,7 +37,7 @@ void fill(double* x, int N, double value) {
 }
 
 void dump(double* x, int N) {
-    if (N < 10) {
+    if (N < 20) {
         for (int i = 0; i < N; i++) {
             std::cout << x[i] << " ";
         }
@@ -49,7 +55,11 @@ void FillInitialValues(double* A, double* b, int N) {
         u[i] = sin(2*M_PI*i / N) * 100;
     }
     mulMV(A, u, N, b);
+    std::cout << "b: " << std::endl;
+    dump(b, N);
+    std::cout << "u: " << std::endl;
     dump(u, N);
+    DEBUG(scalar(b, b, N));
     delete[] u;
 }
 
@@ -109,13 +119,11 @@ void solve(const double* A, const double* b, int N, double* x) {
     delete[] buf1;
 }
 
+
 int main(int argc, char** argv) {
     const int N = 10;
 
     // === Initialize MPI ===
-
-    int p_rank;
-    int p_count;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
@@ -130,7 +138,8 @@ int main(int argc, char** argv) {
 
     double* A;
     double* b;
-    double* x = new double[N];;
+    double* x = new double[N];
+    fill(x, N, 0.0);
 
     if (p_rank == 0) {
         A = new double[N*N];
@@ -179,6 +188,7 @@ int main(int argc, char** argv) {
 
     double b_square_part = 0;
     for (int i = 0; i < b_sizes[p_rank]; i++) {
+        DEBUG(b_part[i]);
         part_buf0[i] = 0;
         for (int j = 0; j < N; j++) {
             part_buf0[i] += b_part[i] - A_part[i * N + j] * x[j];
@@ -186,50 +196,64 @@ int main(int argc, char** argv) {
         part_buf1[i] = part_buf0[i];
         b_square_part += b_part[i] * b_part[i];
     }
-    MPI_Reduce(&b_square_part, &b_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    MPI_Allreduce(&b_square_part, &b_square, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, r, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf1, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+
     
+    
+    r_square = scalar(r, r, N);
+    DEBUG(b_square_part);
     // 2 - main cycle
     // TODO: Parallelize fully
     int converges = false;
     while (!converges) {
         // get Az
-        for (int i = 0; i < b_sizes[p_rank]; i++) {
-            part_buf0[i] = 0;
-            for (int j = 0; j < N; j++) {
-                part_buf0[i] += A_part[i * N + j] * z[j];
-            }
-        }
-        MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
-
-        if (p_rank == 0) {
-            double r_square = 0;
-            r_square = scalar(r, r, N);
-            double alpha = r_square / scalar(Az, z, N);
-            
-            for (int i = 0; i < N; i++) {
-                x[i] = x[i] + alpha * z[i];
-            }
-            // full_buf - z_n+1
-            for (int i = 0; i < N; i++) {
-                full_buf[i] = r[i] - alpha * Az[i];
-            }
-            double r_new_square = scalar(full_buf, full_buf, N);
-            double beta = r_new_square / r_square;
-            for (int i = 0; i < N; i++) {
-                r[i] = full_buf[i];
-            }
-            r_square = r_new_square;
-            for (int i = 0; i < N; i++) {
-                z[i] = r[i] + beta * z[i];
-            }
-            if ((r_square / b_square) < EPS) {
-                converges = true;
-            }
-        }
+        // for (int i = 0; i < b_sizes[p_rank]; i++) {
+        //     part_buf0[i] = 0;
+        //     for (int j = 0; j < N; j++) {
+        //         part_buf0[i] += A_part[i * N + j] * z[j];
+        //     }
+        // }
+        // MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
         
-        MPI_Bcast(&converges, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        mulMV(A, z, N, Az);
+
+        DEBUG("Az");
+        dump(Az, N);
+
+        DEBUG("z");
+        dump(z, N);
+
+        DEBUG("r");
+        dump(r, N);
+
+        double alpha = r_square / scalar(Az, z, N);
+
+        for (int i = 0; i < N; i++) {
+            x[i] = x[i] + alpha * z[i];
+        }
+        // full_buf - z_n+1
+        for (int i = 0; i < N; i++) {
+            full_buf[i] = r[i] - alpha * Az[i];
+        }
+        double r_new_square = scalar(full_buf, full_buf, N);
+        double beta = r_new_square / r_square;
+        for (int i = 0; i < N; i++) {
+            r[i] = full_buf[i];
+        }
+        r_square = r_new_square;
+        
+        for (int i = 0; i < N; i++) {
+            z[i] = r[i] + beta * z[i];
+        }
+
+        if ((r_square / b_square) < EPS) {
+            converges = true;
+        }
+
+        DEBUG(converges);
     }
 
     if (p_rank == 0) {
