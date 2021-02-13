@@ -2,6 +2,7 @@
 #include <vector>
 #include <cassert>
 #include <math.h>
+#include <fstream>
 
 #include <mpi.h>
 
@@ -35,14 +36,13 @@ void fill(double* x, int N, double value) {
         x[i] = value;
     }
 }
-
-void dump(double* x, int N) {
-    if (N < 20) {
-        for (int i = 0; i < N; i++) {
-            std::cout << x[i] << " ";
-        }
-        std::cout << std::endl;
+void dump(double* x, int N, std::string fname) {
+    std::ofstream f(fname);
+    for (int i = 0; i < N; i++) {
+        f << x[i] << " ";
     }
+    f << std::endl;
+    f.close();
 }
 
 void FillInitialValues(double* A, double* b, int N) {
@@ -52,76 +52,16 @@ void FillInitialValues(double* A, double* b, int N) {
         A[i * N + i] = 2.0;
     }
     for (int i = 0; i < N; i++) {
-        u[i] = i+1;
+        u[i] = sin(M_PI * 2 * i / N);
     }
     mulMV(A, u, N, b);
-    std::cout << "b: " << std::endl;
-    dump(b, N);
-    std::cout << "u: " << std::endl;
-    dump(u, N);
-    DEBUG(scalar(b, b, N));
     delete[] u;
 }
 
-void solve(const double* A, const double* b, int N, double* x) {
-    std::cout << "STARTED SOLVING " << std::endl;
-    double* r = new double[N];
-    double* z = new double[N];
-    double* Az = new double[N];
-    double* buf1 = new double[N];
-
-    fill(x, N, 0.0);
-    mulMV(A, x, N, buf1);
-    for (int i = 0; i < N; i++) {
-        r[i] = b[i] - buf1[i];
-        z[i] = r[i];
-    }
-    double r_square = scalar(r, r, N);
-    double b_square = scalar(b, b, N);
-
-    int iter;
-    for (iter = 0; iter < 100; iter++) {
-        std::cout << "ITER: " << iter << std::endl;
-
-        mulMV(A, z, N, Az);
-
-        double alpha = r_square / scalar(Az, z, N);
-        for (int i = 0; i < N; i++) {
-            x[i] = x[i] + alpha * z[i];
-        }
-
-        for (int i = 0; i < N; i++) {
-            buf1[i] = r[i] - alpha * Az[i];
-        }
-
-        double r_new_square = scalar(buf1, buf1, N);
-        double beta = r_new_square / r_square;
-
-        for (int i = 0; i < N; i++) {
-            r[i] = buf1[i];
-        }
-
-        r_square = r_new_square;
-
-        for (int i = 0; i < N; i++) {
-            z[i] = r[i] + beta * z[i];
-        }
-
-        if ((r_square / b_square) < EPS) {
-            break;
-        }
-    }
-
-    std::cout << "DONE" << std::endl;
-    delete[] r;
-    delete[] z;
-    delete[] Az;
-    delete[] buf1;
-}
-
-
 int main(int argc, char** argv) {
-    const int N = 512;
+    // 179 - ok
+    // 180 - not ok
+    const int N = 179;
 
     // === Initialize MPI ===
 
@@ -129,7 +69,7 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
     MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
 
-    const int MAX_PART_SIZE = N / p_count + 1;
+    const int MAX_PART_SIZE = N / p_count + 3;
 
     // === Load data and split data across processes ===
     
@@ -243,7 +183,7 @@ int main(int argc, char** argv) {
 
     if (p_rank == 0) {
         std::cout << "RESULT" << std::endl;
-        dump(x, N);
+        dump(x, N, "output.bin");
     }
 
     if (p_rank == 0) {
