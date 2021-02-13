@@ -55,13 +55,13 @@ void FillInitialValues(double* A, double* b, int N) {
         u[i] = sin(M_PI * 2 * i / N);
     }
     mulMV(A, u, N, b);
+    dump(u, N, "good_values.bin");
     delete[] u;
 }
 
 int main(int argc, char** argv) {
-    // 179 - ok
-    // 180 - not ok
-    const int N = 179;
+    double start, end;
+    const int N = 20000;
 
     // === Initialize MPI ===
 
@@ -111,14 +111,18 @@ int main(int argc, char** argv) {
     MPI_Scatterv(A, A_sizes, A_starts, MPI_DOUBLE, A_part, A_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Scatterv(b, b_sizes, b_starts, MPI_DOUBLE, b_part, b_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // !TODO: change to "by parts"
-    // YOU ARE HERE
     double* r = new double[N];
     double* z = new double[N];
     double* Az = new double[N];
     double* part_buf0 = new double[b_sizes[p_rank]];
     double* part_buf1 = new double[b_sizes[p_rank]];
     double* full_buf = new double[N];
+
+    //
+    if (p_rank == 0) {
+        start = MPI_Wtime();
+    }
+
 
     // 1 - initialization
     // r0 = b0 0- Ax0
@@ -146,6 +150,9 @@ int main(int argc, char** argv) {
     // 2 - main cycle
     int converges = false;
     while (!converges) {
+        if (p_rank == 0) {
+            std::cout << "ITER" << std::endl;
+        }
         // get Az
         for (int i = 0; i < b_sizes[p_rank]; i++) {
             part_buf0[i] = 0;
@@ -154,7 +161,7 @@ int main(int argc, char** argv) {
             }
         }
         MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
-        
+
         double alpha = r_square / scalar(Az, z, N);
 
         for (int i = 0; i < N; i++) {
@@ -175,14 +182,15 @@ int main(int argc, char** argv) {
         for (int i = 0; i < N; i++) {
             z[i] = r[i] + beta * z[i];
         }
-
         if ((r_square / b_square) < EPS) {
             converges = true;
         }
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 
     if (p_rank == 0) {
-        std::cout << "RESULT" << std::endl;
+        end = MPI_Wtime();
+        std::cout << "DONE: " << p_count << ": " << end - start << std::endl;
         dump(x, N, "output.bin");
     }
 
