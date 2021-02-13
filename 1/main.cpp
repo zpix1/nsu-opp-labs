@@ -239,8 +239,6 @@ int main(int argc, char** argv) {
         if ((r_square / b_square) < EPS) {
             converges = true;
         }
-
-        DEBUG(converges);
     }
 
     if (p_rank == 0) {
