@@ -2,10 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-Nx = 50
-Ny = 80
-
-N = Nx * Ny
+from settings import *
 
 def random_matrix():
     A_t = np.random.uniform(0, 10, size=(N, N))
@@ -30,13 +27,12 @@ def plate_matrix():
             x /= 10
             y /= -10
             
-
             if i == 0 or j == 0 or i == Nx - 1 or j == Ny - 1:
                 P[i][j] = 1
-            # elif (R) ** 2 <= (i - Ox)**2 + (j - Oy)**2 <= (R+1) ** 2:
-            #     P[i][j] = -1
-            if (x**2 + y**2 - 1)**3 - x**2*y**3 < 0:
+            elif (R) ** 2 <= (i - Ox)**2 + (j - Oy)**2 <= (R+1) ** 2:
                 P[i][j] = -1
+            # if (x**2 + y**2 - 1)**3 - x**2*y**3 < 0:
+            #     P[i][j] = -1
     # P[Ox][Oy] = 10
     return P
 
@@ -71,7 +67,6 @@ b = P.flatten()
 # print(A)
 # print(A == A.T)
 # print(b)
-x = np.linalg.solve(A, b)
 
 with open('input.dat', 'w') as f:
     f.write(str(b.size) + '\n')
@@ -79,21 +74,3 @@ with open('input.dat', 'w') as f:
     f.write('\n')
     b.tofile(f, sep=" ")
 
-os.system('./run.sh 2')
-
-sol_x = np.fromfile('output.dat', sep=" ")
-
-print('max diff: ', max(sol_x - x))
-
-result_plate = x.reshape((Nx, Ny))
-
-print(result_plate)
-
-fig = plt.figure()
-ax = fig.add_subplot(111)
-cax = ax.matshow(result_plate, cmap='viridis')
-cb = fig.colorbar(cax, ticks=[-1, 0, 5], label='Температура')
-cb.ax.set_yticklabels(['Холодно', 'Холодно', 'Горячо']) 
-plt.axis('off')
-plt.title('Распределение тепла в пластинке')
-fig.savefig('plate.png', dpi=900)

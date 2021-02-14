@@ -12,7 +12,7 @@ int p_count;
 #define DEBUG(var) \
             do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
 
-const double EPS = 1e-5;
+const double EPS = 1e-10;
 
 void mulMV(const double* A, const double* x, int N, double* res)  {
     for (int i = 0; i < N; i++) {
