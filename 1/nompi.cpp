@@ -103,6 +103,13 @@ void solve(const double* A, const double* b, int N, double* x) {
 }
 
 int main() {
+    int Nx = 30, Ny = 30;
+    int N = Nx*Ny;
+    double* A = new double[N];
+    
+
+    exit(0);
+
     const int N = 1000;
     // === 1 ===
     // Matrix A(N);

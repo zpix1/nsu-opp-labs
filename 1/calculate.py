@@ -35,9 +35,9 @@ def plate_matrix():
                 P[i][j] = 1
             # elif (R) ** 2 <= (i - Ox)**2 + (j - Oy)**2 <= (R+1) ** 2:
             #     P[i][j] = -1
-            elif (x**2 + y**2 - 1)**3 - x**2*y**3 < -0.1:
+            if (x**2 + y**2 - 1)**3 - x**2*y**3 < 0:
                 P[i][j] = -1
-    P[Ox][Oy] = 10
+    # P[Ox][Oy] = 10
     return P
 
 def neighbors(i, j):
@@ -91,9 +91,9 @@ print(result_plate)
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
-cax = ax.matshow(result_plate)
-# cb = fig.colorbar(cax, ticks=[-400, -1, 0, 1])
-# cb.ax.set_yticklabels(['Холодно', '0', 'Горячо', 'Очень горячо']) 
+cax = ax.matshow(result_plate, cmap='viridis')
+cb = fig.colorbar(cax, ticks=[-1, 0, 5], label='Температура')
+cb.ax.set_yticklabels(['Холодно', 'Холодно', 'Горячо']) 
 plt.axis('off')
-plt.title('Распределение тепла по пластинке')
+plt.title('Распределение тепла в пластинке')
 fig.savefig('plate.png', dpi=900)

@@ -69,31 +69,40 @@ void FillInitialValues(double* A, double* b, int N) {
 
 int main(int argc, char** argv) {
     double start, end;
-    const int N = 1000;
+    int N;
 
     // === Initialize MPI ===
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
     MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
-
-    const int MAX_PART_SIZE = N / p_count + 3;
-
     // === Load data and split data across processes ===
-    
-    double* A_part = new double[MAX_PART_SIZE * N];
-    double* b_part = new double[MAX_PART_SIZE];
-
     double* A;
     double* b;
+
+    if (p_rank == 0) {
+        std::ifstream f("input.dat");
+        f >> N;
+        DEBUG(N);
+        A = new double[N*N];
+        b = new double[N];
+        for (int i = 0; i < N*N; i++) {
+            f >> A[i];
+        }
+        for (int i = 0; i < N; i++) {
+            f >> b[i];
+        }
+    }
+    MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     double* x = new double[N];
     fill(x, N, 0.0);
 
-    if (p_rank == 0) {
-        A = new double[N*N];
-        b = new double[N];
-        FillInitialValues(A, b, N);
-    }
+
+    const int MAX_PART_SIZE = N / p_count + 3;
+
+    double* A_part = new double[MAX_PART_SIZE * N];
+    double* b_part = new double[MAX_PART_SIZE];
 
     int* b_starts = new int[p_count];
     int* b_sizes = new int[p_count];
@@ -126,7 +135,6 @@ int main(int argc, char** argv) {
     double* part_buf1 = new double[b_sizes[p_rank]];
     double* full_buf = new double[N];
 
-    //
     if (p_rank == 0) {
         start = MPI_Wtime();
     }
@@ -156,7 +164,7 @@ int main(int argc, char** argv) {
     r_square = scalar(r, r, N);
 
     // 2 - main cycle
-    int i = 0;
+    // int i = 0;
     int converges = false;
     while (!converges) {
         // if (p_rank == 0) {
@@ -205,6 +213,9 @@ int main(int argc, char** argv) {
 
         // mulMV(A, x, N, z);
         // for (int i = 0; i < N; i++) {
+        //     DEBUG(b[i]);
+        //     DEBUG(z[i]);
+        //     DEBUG(x[i]);
         //     std::cout << fabs(z[i] - b[i]) << std::endl;
         // }
     }
