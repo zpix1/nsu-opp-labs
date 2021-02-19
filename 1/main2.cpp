@@ -84,7 +84,6 @@ int main(int argc, char** argv) {
     if (p_rank == 0) {
         std::ifstream f("input.dat");
         f >> N;
-        DEBUG(N);
         A = new double[N*N];
         b = new double[N];
         x = new double[N*N];
@@ -206,10 +205,8 @@ int main(int argc, char** argv) {
         r_square = r_new_square;
         MPI_Barrier(MPI_COMM_WORLD);
     }
-    DEBUG("MPI Alp");
     MPI_Gatherv(x_part, b_sizes[p_rank], MPI_DOUBLE, x, b_sizes, b_starts, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    DEBUG("MPI Alp 1");
     if (p_rank == 0) {
         end = MPI_Wtime();
         std::cout << "DONE: " << p_count << ": " << end - start << std::endl;
