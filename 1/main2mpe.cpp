@@ -23,6 +23,16 @@ double scalar(const double* a, const double* b, int N) {
     return res;
 }
 
+double vscalar(const double* a, const double* b, int N, int* v_starts, int* v_sizes, int p_rank) {
+    double res = 0;
+    for (int i = 0; i < v_sizes[p_rank]; i++) {
+        res += a[v_starts[p_rank] + i] * b[v_starts[p_rank] + i];
+    }
+    double ans;
+    MPI_Allreduce(&res, &ans, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return ans;
+}
+
 void dump(double* x, int N, std::string fname) {
     std::ofstream f(fname);
     for (int i = 0; i < N; i++) {
@@ -38,7 +48,7 @@ int main(int argc, char** argv) {
 
     int evtid_begin_matrix_mul, evtid_end_matrix_mul;
     int evtid_begin_addition_calculations, evtid_end_addition_calculations;
-
+    int evtid_begin_allgv, evtid_end_allgv;
     // === Initialize MPI ===
 
     MPI_Init(&argc, &argv);
@@ -48,9 +58,12 @@ int main(int argc, char** argv) {
     evtid_end_matrix_mul = MPE_Log_get_event_number();
     evtid_begin_addition_calculations = MPE_Log_get_event_number();
     evtid_end_addition_calculations = MPE_Log_get_event_number();
+    evtid_begin_allgv = MPE_Log_get_event_number();
+    evtid_end_allgv = MPE_Log_get_event_number();
 
     MPE_Describe_state(evtid_begin_matrix_mul, evtid_end_matrix_mul, "Vector-Matrix Mul", "red");
     MPE_Describe_state(evtid_begin_addition_calculations, evtid_end_addition_calculations, "Other vector calculations", "blue");
+    MPE_Describe_state(evtid_begin_allgv, evtid_end_allgv, "MPI_Allgatherv", "yellow");
 
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
     MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
@@ -124,7 +137,6 @@ int main(int argc, char** argv) {
     double r_square = 0;
     double b_square = 0;
     MPE_Log_event(evtid_begin_matrix_mul, p_rank, (char*)0);
-
     double b_square_part = 0;
     for (int i = 0; i < b_sizes[p_rank]; i++) {
         part_buf0[i] = 0;
@@ -132,24 +144,21 @@ int main(int argc, char** argv) {
             part_buf0[i] += A_part[i * N + j] * x_part[j];
         }
         part_buf0[i] = b_part[i] - part_buf0[i];
-        part_buf1[i] = part_buf0[i];
         b_square_part += b_part[i] * b_part[i];
     }
     MPE_Log_event(evtid_end_matrix_mul, p_rank, (char*)0);
 
-
     MPI_Allreduce(&b_square_part, &b_square, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, r, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
-    MPI_Allgatherv(part_buf1, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
     
-    r_square = scalar(r, r, N);
+    r_square = vscalar(r, r, N, b_starts, b_sizes, p_rank);
 
     // 2 - main cycle
     // int i = 0;
     int converges = false;
     while (!converges) {
         MPE_Log_event(evtid_begin_matrix_mul, p_rank, (char*)0);
-
         for (int i = 0; i < b_sizes[p_rank]; i++) {
             part_buf0[i] = 0;
             for (int j = 0; j < N; j++) {
@@ -157,11 +166,12 @@ int main(int argc, char** argv) {
             }
         }
         MPE_Log_event(evtid_end_matrix_mul, p_rank, (char*)0);
-
+        MPE_Log_event(evtid_begin_allgv, p_rank, (char*)0);
         MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
+        MPE_Log_event(evtid_end_allgv, p_rank, (char*)0);
         MPE_Log_event(evtid_begin_addition_calculations, p_rank, (char*)0);
 
-        double alpha = r_square / scalar(Az, z, N);
+        double alpha = r_square / vscalar(Az, z, N, b_starts, b_sizes, p_rank);
         
         for (int i = 0; i < b_sizes[p_rank]; i++) {
             x_part[i] = x_part[i] + alpha * z[b_starts[p_rank] + i];
@@ -171,7 +181,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < N; i++) {
             full_buf[i] = r[i] - alpha * Az[i];
         }
-        double r_new_square = scalar(full_buf, full_buf, N);
+        double r_new_square = vscalar(full_buf, full_buf, N, b_starts, b_sizes, p_rank);
         double beta = r_new_square / r_square;
         for (int i = 0; i < N; i++) {
             r[i] = full_buf[i];
@@ -180,7 +190,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < N; i++) {
             z[i] = r[i] + beta * z[i];
         }
-        if ((sqrt(r_square) / sqrt(b_square)) < EPS) {
+        if (sqrt(r_square/b_square) < EPS) {
             converges = true;
         }
         r_square = r_new_square;

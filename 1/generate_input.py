@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import random
-# import matplotlib.pyplot as plt
 
 print('generate input stated')
 
@@ -71,10 +70,6 @@ P = plate_matrix()
 
 A = plate_sol_matrix()
 b = P.flatten()
-
-# print(A)
-# print(A == A.T)
-# print(b)
 
 print('writing input.dat')
 

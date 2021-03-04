@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
     MPE_Log_event(evtid_end_matrix_mul, p_rank, (char*)0);
 
     b_square = scalar(b, b, N);
-
+// change
     MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, r, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgatherv(part_buf1, b_sizes[p_rank], MPI_DOUBLE, z, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
     
@@ -168,6 +168,7 @@ int main(int argc, char** argv) {
             }
         }
         MPE_Log_event(evtid_end_matrix_mul, p_rank, (char*)0);
+        // add new event MPE
         MPI_Allgatherv(part_buf0, b_sizes[p_rank], MPI_DOUBLE, Az, b_sizes, b_starts, MPI_DOUBLE, MPI_COMM_WORLD);
         MPE_Log_event(evtid_begin_addition_calculations, p_rank, (char*)0);
         double alpha = r_square / scalar(Az, z, N);
