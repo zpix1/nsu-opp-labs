@@ -16,9 +16,9 @@ void dump(double* x, int N, std::string fname) {
 }
 
 void mulMV(const double* A, const double* x, int N, double* res)  {
-    #pragma omp parallel for
     for (int i = 0; i < N; i++) {
         res[i] = 0;
+        #pragma omp parallel for reduction(+:res[i])
         for (int j = 0; j < N; j++) {
             res[i] += A[i * N + j] * x[j];
         }
@@ -41,10 +41,6 @@ void fill(double* x, int N, double value) {
         x[i] = value;
     }
 }
-
-
-#define DEBUG(var) \
-            do { std::cout << #var << ": " << var << std::endl; } while (0)
 
 void solve(const double* A, const double* b, int N, double* x) {
     double* r = new double[N];
@@ -69,9 +65,6 @@ void solve(const double* A, const double* b, int N, double* x) {
         mulMV(A, z, N, Az);
 
         double alpha = r_square / scalar(Az, z, N);
-        
-        DEBUG(scalar(Az, z, N));
-
         #pragma omp parallel for
         for (int i = 0; i < N; i++) {
             x[i] = x[i] + alpha * z[i];

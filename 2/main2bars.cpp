@@ -38,9 +38,6 @@ void fill(double* x, int N, double value) {
     }
 }
 
-#define DEBUG(var) \
-            do { std::cout << #var << ": " << var << std::endl; } while (0)
-
 void solve(const double* A, const double* b, int N, double* x) {
     double* r = new double[N];
     double* z = new double[N];
@@ -70,58 +67,68 @@ void solve(const double* A, const double* b, int N, double* x) {
     double b_square = 0.0;
     for (i = 0; i < N; i++) { b_square += b[i] * b[i]; }
 
+    // int iter;
     double sc_Az_z = 0, r_new_square = 0;
-    #pragma omp parallel shared(sc_Az_z)
+    #pragma omp parallel shared(sc_Az_z, r_new_square)
     for (int iter = 0; iter < 100000; iter++) {
         #pragma omp single
-        {
-            sc_Az_z = 0;
-            r_new_square = 0;
-            std::cout << "ITER: " << iter << std::endl;
-        }
-
-
-        #pragma omp for
-        for (int i = 0; i < N; i++) {
+        std::cout << "ITER: " << iter << std::endl;
+            // mulMV(A, z, N, Az);
+        for (i = 0; i < N; i++) {
             Az[i] = 0;
-            for (int j = 0; j < N; j++) {
+            for (j = 0; j < N; j++) {
                 Az[i] += A[i * N + j] * z[j];
             }
         }
 
-        #pragma omp for reduction(+:sc_Az_z)
-        for (i = 0; i < N; i++) {
-            sc_Az_z += Az[i] * z[i]; 
-        }
+        sc_Az_z = 0;
+        #pragma omp barrier
+
+        double sc_Az_z_private = 0;
+        #pragma omp for 
+        for (i = 0; i < N; i++) { sc_Az_z_private += Az[i] * z[i]; }
+
+        #pragma omp atomic
+        sc_Az_z += sc_Az_z_private;
+        #pragma omp barrier
         
         double alpha = r_square / sc_Az_z;
         
         #pragma omp for
-        for (int i = 0; i < N; i++) {
+        for (i = 0; i < N; i++) {
             x[i] = x[i] + alpha * z[i];
             buf1[i] = r[i] - alpha * Az[i];
         }
-
+        r_new_square = 0;
         #pragma omp barrier
 
         // double r_new_square = scalar(buf1, buf1, N);
-        #pragma omp for reduction(+:r_new_square)
-        for (int i = 0; i < N; i++) { r_new_square += buf1[i] * buf1[i]; }
+        double r_new_square_private = 0;
+        #pragma omp for
+        for (i = 0; i < N; i++) { r_new_square_private += buf1[i] * buf1[i]; }
+
+        #pragma omp atomic
+        r_new_square += r_new_square_private;
+        #pragma omp barrier
 
         double beta = r_new_square / r_square;
-
+        #pragma omp barrier
         #pragma omp for
         for (int i = 0; i < N; i++) {
             r[i] = buf1[i];
+        }
+        #pragma omp barrier
+        #pragma omp for
+        for (int i = 0; i < N; i++) {
             z[i] = r[i] + beta * z[i];
         }
-
         if ((sqrt(r_square) / sqrt(b_square)) < EPS) {
             break;
         }
+        #pragma omp barrier
 
-        #pragma omp single
         r_square = r_new_square;
+        #pragma omp barrier
     }
 
     delete[] r;
