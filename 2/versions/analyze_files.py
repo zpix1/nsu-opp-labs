@@ -12,8 +12,8 @@ def get_time(filename):
 
 first_times = [
     None,
-    81.8387,
-    84.9845
+    get_time(glob.glob('run_mul_version_1_1_1-1.sh.o*')[0]),
+    get_time(glob.glob('run_mul_version_2_1_1-1.sh.o*')[0])
 ]
 
 total = {}
@@ -76,7 +76,7 @@ for v in ['1', '2']:
 
         x = data['{}_{}'.format(v, 'PC')]
         y = data['{}_{}'.format(v, t)]
-        gen_plot(x, y, plots.flatten()[i], t, v)
+        gen_plot(x, y, plots.flatten()[i % 3], t, v)
         i += 1
 fig.tight_layout()
 fig.savefig('results_plots.png', dpi=900)

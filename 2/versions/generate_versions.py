@@ -21,7 +21,7 @@ cores = [1, 2, 4, 8, 12, 16, 24]
 
 def write_version(nodes, cpus, version):
     npc = nodes * cpus
-    script = base.format(NODES=nodes, CPUS=cpus, NPC=npc, VERSION=version)
+    script = base.format(NODES=nodes, CPUS=min(cpus, 24), NPC=npc, VERSION=version)
     fname = f'run_mul_version_{version}_{npc}_{nodes}-{cpus}.sh'
     with open(fname, 'w') as f:
         f.write(script)
@@ -31,15 +31,21 @@ def write_version(nodes, cpus, version):
 write_version(1, 1, 1)
 write_version(1, 2, 1)
 write_version(1, 4, 1)
-write_version(2, 4, 1)
-write_version(2, 6, 1)
-write_version(2, 8, 1)
-write_version(2, 12, 1)
+write_version(1, 8, 1)
+write_version(1, 12, 1)
+write_version(1, 16, 1)
+write_version(1, 20, 1)
+write_version(1, 24, 1)
+write_version(1, 28, 1)
+write_version(1, 32, 1)
 
 write_version(1, 1, 2)
 write_version(1, 2, 2)
 write_version(1, 4, 2)
-write_version(2, 4, 2)
-write_version(2, 6, 2)
-write_version(2, 8, 2)
-write_version(2, 12, 2)
+write_version(1, 8, 2)
+write_version(1, 12, 2)
+write_version(1, 16, 2)
+write_version(1, 20, 2)
+write_version(1, 24, 2)
+write_version(1, 28, 2)
+write_version(1, 32, 2)
