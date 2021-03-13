@@ -6,8 +6,6 @@
 
 #include <mpi.h>
 
-int p_rank;
-int p_count;
 
 #define DEBUG(var) \
             do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
@@ -18,22 +16,46 @@ void fill(double* x, int N, double value) {
     }
 }
 
-void split_matrix_parts(int* starts, int* sizes, int N, int pc) {
+void mulAB(int N1, int N2, int N3, double* A, double* B, double* C)  {
+    // ..
+}
+
+void split(int* starts, int* sizes, int N, int pc, int k) {
     int offset = 0;
     for (int i = 0; i < pc; i++) {
         sizes[i] = N / pc;
         if (i < N % pc) {
             sizes[i]++;
         }
-        
-        sizes[i] *= N;
+
+        sizes[i] *= k;
 
         starts[i] = offset;
         offset += sizes[i];
     }
 }
 
-int main(int argc, char** argv) {
+void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_Comm comm2d, int* dims, int* periods) {
+    int coords[2];
+    MPI_Cart_get(comm2d, 2, dims, periods, coords);
+    int ranky = coords[0];
+    int rankx = coords[1];
+
+    if (ranky == 0) {
+        // Scatter
+    }
+    if (rankx == 0) {
+        // Scatter
+    }
+
+    // BCast
+
+}
+
+int main(int argc, char** argv) {    
+    int p_rank;
+    int p_count;
+
     const int N1 = 5;
     const int N2 = 6;
     const int N3 = 7;
@@ -62,26 +84,11 @@ int main(int argc, char** argv) {
         matrix_C = new double[N2*N2];
     }
 
-    // SPLIT DATA
-    int* p1_starts = new int[P1];
-    int* p1_sizes = new int[P1];
+    int dims[2] = {0, 0}, periods[2] = {0, 0};
+    MPI_Comm comm2d;
+    MPI_Dims_create(p_count, 2, dims);
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 0, &comm2d);
 
-    int* p2_starts = new int[P2];
-    int* p2_sizes = new int[P2];
+    mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, comm2d, dims, periods);
 
-    int p1_offset = 0;
-    int p2_offset = 0;
-
-    split_matrix_parts(p1_starts, p1_sizes, N2, P1);
-    split_matrix_parts(p2_starts, p2_sizes, N2, P2);
-
-    // SCATTER DATA
-    double* matrix_A_part = new double[p1_sizes[p_rank] * N2];
-    double* matrix_B_part = new double[p2_sizes[p_rank] * N2];
-
-    MPI_Scatterv(matrix_A, p1_sizes, p1_starts, MPI_DOUBLE, matrix_A_part, p1_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Scatterv(matrix_B, p2_sizes, p2_starts, MPI_DOUBLE, matrix_B_part, p2_sizes[p_rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    
-    // MULTIPLY
-    
 }
