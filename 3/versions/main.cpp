@@ -3,9 +3,12 @@
 #include <cassert>
 #include <math.h>
 #include <fstream>
-
+#include <cstdlib>
 #include <mpi.h>
+// #include <cblas.h>
+#include <mkl_cblas.h>
 
+// #define CHECK
 
 #define DEBUG(var) \
             do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
@@ -147,7 +150,8 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
     MPI_Bcast(AA, nn[0] * k, MPI_DOUBLE, 0, comm1d[1]);
     MPI_Bcast(BB, k * nn[1], MPI_DOUBLE, 0, comm1d[0]);
 
-    mat_mat_mul(nn[0], nn[1], k, AA, BB, CC);
+    // mat_mat_mul(nn[0], nn[1], k, AA, BB, CC);
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nn[0], nn[1], k, 1, AA, k, BB, nn[1], 1, CC, nn[1]);
     
     MPI_Datatype c_recv_vector_t, c_send_vector_t, c_padded_recv_vector_t;
     
@@ -211,6 +215,7 @@ int main(int argc, char** argv) {
         matrix_C = new double[N1*N3];
 #ifdef CHECK
         matrix_C1 = new double[N1*N3];
+        // cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nn[0], nn[1], k, 1, AA, k, BB, nn[1], 1, CC, nn[1]);
         mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C1);
 #endif
     }
@@ -219,6 +224,7 @@ int main(int argc, char** argv) {
     if (p_rank == 0) {
         start = MPI_Wtime();
     }
+    
     mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
     if (p_rank == 0) {
         end = MPI_Wtime();
@@ -236,6 +242,7 @@ int main(int argc, char** argv) {
                 break;
             }
         }
+        printf("checked\n");
         delete[] matrix_C1;
         #endif
 

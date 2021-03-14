@@ -5,7 +5,6 @@
 #include <fstream>
 
 #include <mpi.h>
-#include <mpe.h>
 
 
 #define DEBUG(var) \
@@ -238,17 +237,24 @@ int main(int argc, char** argv) {
     }
 
     int p[2] = {P1, P2};
-    if (p_rank == 0) {
-        start = MPI_Wtime();
-    }
-    mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
-    if (p_rank == 0) {
-        end = MPI_Wtime();
-        printf("%d\t%d\t%d\t%d\t%d\t%d\t", P1*P2, P1, P2, N1, N2, N3);
-        printf("%.2f\n", end - start);
+    double min = 1000000;
+    for (int i = 0; i < 3; i++) {
+        if (p_rank == 0) {
+            start = MPI_Wtime();
+        }
+
+        mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
+        
+        if (p_rank == 0) {
+            end = MPI_Wtime();
+            double t = end - start;
+            min = std::min(min, t);
+        }
     }
     
     if (p_rank == 0) {
+        printf("%d\t%d\t%d\t%d\t%d\t%d\t", P1*P2, P1, P2, N1, N2, N3);
+        printf("%.2f\n", min);
         // printmat(matrix_C, N1, N3, "C");
         // printmat(matrix_C1, N1, N3, "C1");
         #ifdef CHECK
