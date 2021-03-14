@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
     int p_rank;
     int p_count;
 
-    const int N1 = 16;
+    const int N1 = 2;
     const int N2 = 8;
     const int N3 = 16;
     const int P1 = 2;
@@ -238,9 +238,11 @@ int main(int argc, char** argv) {
     // LOAD MATRIX
     if (p_rank == 0) {
         matrix_A = new double[N1*N2];
-        fill(matrix_A, N1 * N2, 5.);
+        fillmat(matrix_A, N1, N2, RAND, 0.);
+        // fill(matrix_A, N1 * N2, 5.);
         matrix_B = new double[N2*N3];
-        fill(matrix_B, N2 * N3, 5.);
+        fillmat(matrix_B, N2, N3, RAND, 0.);
+        // fill(matrix_B, N2 * N3, 5.);
         matrix_C = new double[N1*N3];
         matrix_C1 = new double[N1*N3];
         mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C1);
@@ -249,15 +251,8 @@ int main(int argc, char** argv) {
     }
 
     int p[2] = {P1, P2};
-    if (p_rank == 0) {
-        printf("Started mpi mat mat mul\n");
-    }
-
+    
     mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
-
-    if (p_rank == 0) {
-        printf("Ended mpi mat mat mul\n");
-    }
 
     if (p_rank == 0) {
         printmat(matrix_C, N1, N3, "C");
