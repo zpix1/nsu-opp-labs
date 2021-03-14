@@ -194,14 +194,13 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
     MPI_Type_commit(&resized_recv_vector_t);
 
     MPI_Gatherv(CC, 1, send_vector_t, C, countc, dispc, resized_recv_vector_t, 0, comm2d);
-
+    
     MPI_Type_free(&recv_vector_t);
     MPI_Type_free(&resized_recv_vector_t);
     MPI_Type_free(&send_vector_t);
     MPI_Comm_free(&comm1d[0]);
     MPI_Comm_free(&comm1d[1]);
     MPI_Comm_free(&comm2d);
-
     delete[] AA;
     delete[] BB;
     delete[] CC;
@@ -210,7 +209,6 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
         delete[] countc;
     }
     
-    
 }
 
 int main(int argc, char** argv) {    
@@ -218,7 +216,7 @@ int main(int argc, char** argv) {
     int p_count;
 
     const int N1 = 16;
-    const int N2 = 16;
+    const int N2 = 8;
     const int N3 = 16;
     const int P1 = 2;
     const int P2 = 2;
@@ -240,19 +238,26 @@ int main(int argc, char** argv) {
     // LOAD MATRIX
     if (p_rank == 0) {
         matrix_A = new double[N1*N2];
-        fillmat(matrix_A, N1, N2, RAND, 5.);
+        fill(matrix_A, N1 * N2, 5.);
         matrix_B = new double[N2*N3];
-        fillmat(matrix_B, N2, N3, RAND, 6.);
+        fill(matrix_B, N2 * N3, 5.);
         matrix_C = new double[N1*N3];
         matrix_C1 = new double[N1*N3];
-        mat_mat_mul(N1, N2, N3, matrix_A, matrix_B, matrix_C1);
+        mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C1);
 
         printf("Matrix loading done;\n");
     }
 
     int p[2] = {P1, P2};
+    if (p_rank == 0) {
+        printf("Started mpi mat mat mul\n");
+    }
 
     mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
+
+    if (p_rank == 0) {
+        printf("Ended mpi mat mat mul\n");
+    }
 
     if (p_rank == 0) {
         printmat(matrix_C, N1, N3, "C");
