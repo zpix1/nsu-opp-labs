@@ -16,6 +16,45 @@ void fill(double* x, int N, double value) {
     }
 }
 
+enum Type {
+    DIAG,
+    RAND,
+    REDIAG,
+    INC
+};
+
+void fillmat(double* A, int m, int n, Type type, int value) {
+    if (type == DIAG) {
+        fill(A, m*n, 0.);
+        for (int i = 0; i < std::min(n, m); i++) {
+            A[i * std::max(n, m) + i] = value;
+        }
+    }
+    if (type == REDIAG) {
+        fill(A, m*n, 0.);
+        for (int i = 0; i < std::min(n, m); i++) {
+            int x = std::min(m, n) - i - 1;
+            A[i * std::max(m, n) + x] = value;
+        }
+    }
+    if (type == INC) {
+        fill(A, m*n, 0.);
+        for (int i = 0; i < std::min(n, m); i++) {
+            A[i * std::max(n, m) + i] = i;
+        }
+    }
+}
+
+void printmat(double* A, int m, int n, const char* name, int rank=0) {
+    printf("%s (rank %d):\n", name, rank);
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            printf("%4.0f ", A[i*n + j]);
+        }
+        printf("\n");
+    }
+}
+
 void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_Comm comm, int* p) {
     int size;
     MPI_Comm_size(comm, &size);
@@ -33,13 +72,19 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
 
     // ?
     MPI_Comm comm1d[2];
-    int remains[2];
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            remains[j] = (i == j);
-            MPI_Cart_sub(comm2d, p, &comm1d[i]);
-        }
-    }
+
+    int dims1[] = {0, 1};
+    MPI_Cart_sub(comm2d, dims1, &comm1d[1]);
+    int dims2[] = {1, 0};
+    MPI_Cart_sub(comm2d, dims2, &comm1d[0]);
+
+    // int remains[2];
+    // for (int i = 0; i < 2; i++) {
+    //     for (int j = 0; j < 2; j++) {
+    //         remains[j] = (i == j);
+    //         MPI_Cart_sub(comm2d, remains, &comm1d[i]);
+    //     }
+    // }
 
     int nn[2];
 
@@ -53,7 +98,11 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
 
     if (coords[1] == 0) {
         MPI_Scatter(A, k * nn[0], MPI_DOUBLE, AA, k * nn[0], MPI_DOUBLE, 0, comm1d[0]);
+        // printf("I am %d (%d, %d):\n", rank, coords[0], coords[1]);
+        // printmat(AA, nn[0], k, "AA", rank);
     }
+    // printmat(BB, k, nn[1], "BB", rank);
+    // return;
 
     MPI_Datatype vector_t;
     MPI_Datatype resized_vector_t;
@@ -82,8 +131,9 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
             }
         }
     }
+
     
-    MPI_Bcast(AA, k * nn[0], MPI_DOUBLE, 0, comm1d[1]);
+    MPI_Bcast(AA, nn[0] * k, MPI_DOUBLE, 0, comm1d[1]);
     MPI_Bcast(BB, k * nn[1], MPI_DOUBLE, 0, comm1d[0]);
 
     #define AA(i,j) AA[k*i + j]
@@ -127,8 +177,8 @@ int main(int argc, char** argv) {
     const int N1 = 8;
     const int N2 = 8;
     const int N3 = 8;
-    const int P1 = 1;
-    const int P2 = 1;
+    const int P1 = 2;
+    const int P2 = 2;
 
     double* matrix_A;
     double* matrix_B;
@@ -146,12 +196,9 @@ int main(int argc, char** argv) {
     // LOAD MATRIX
     if (p_rank == 0) {
         matrix_A = new double[N1*N2];
-        fill(matrix_A, N1*N2, 0.);
-        for (int i = 0; i < N1; i++) {
-                matrix_A[i * N2 + i] = 2.0;
-        }
+        fillmat(matrix_A, N1, N2, DIAG, 5.);
         matrix_B = new double[N2*N3];
-        fill(matrix_B, N2*N3, 7.);
+        fillmat(matrix_B, N2, N3, INC, 6.);
         matrix_C = new double[N2*N2];
         printf("Matrix loading done;\n");
     }
@@ -161,12 +208,7 @@ int main(int argc, char** argv) {
     mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
 
     if (p_rank == 0) {
-        for (int i = 0; i < N1; i++) {
-            for (int j = 0; j < N3; j++) {
-                printf("%4.0f ", matrix_C[N3*i + j]);
-            }
-            printf("\n");
-        }
+        printmat(matrix_C, N1, N3, "C");
     }
 
     MPI_Finalize();
