@@ -90,21 +90,12 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
     int coords[2];
     MPI_Cart_get(comm2d, 2, p, periods, coords);
 
-    // ?
     MPI_Comm comm1d[2];
 
     int dims1[] = {0, 1};
     MPI_Cart_sub(comm2d, dims1, &comm1d[1]);
     int dims2[] = {1, 0};
     MPI_Cart_sub(comm2d, dims2, &comm1d[0]);
-
-    // int remains[2];
-    // for (int i = 0; i < 2; i++) {
-    //     for (int j = 0; j < 2; j++) {
-    //         remains[j] = (i == j);
-    //         MPI_Cart_sub(comm2d, remains, &comm1d[i]);
-    //     }
-    // }
 
     int nn[2];
 
@@ -118,28 +109,24 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
 
     if (coords[1] == 0) {
         MPI_Scatter(A, k * nn[0], MPI_DOUBLE, AA, k * nn[0], MPI_DOUBLE, 0, comm1d[0]);
-        // printf("I am %d (%d, %d):\n", rank, coords[0], coords[1]);
-        // printmat(AA, nn[0], k, "AA", rank);
     }
-    // printmat(BB, k, nn[1], "BB", rank);
-    // return;
 
-    MPI_Datatype vector_t;
-    MPI_Datatype resized_vector_t;
-    MPI_Datatype recv_t;
+    MPI_Datatype y_send_vector_t;
+    MPI_Datatype y_padded_vector_t;
+    MPI_Datatype y_recv_cont_t;
     
     int *dispc, *countc;
     if (coords[0] == 0) {
-        MPI_Type_vector(k, nn[1], n, MPI_DOUBLE, &vector_t);
-        MPI_Type_commit(&vector_t);
+        MPI_Type_vector(k, nn[1], n, MPI_DOUBLE, &y_send_vector_t);
+        MPI_Type_commit(&y_send_vector_t);
 
-        MPI_Type_create_resized(vector_t, 0, nn[1] * sizeof(double), &resized_vector_t);
-        MPI_Type_commit(&resized_vector_t);
+        MPI_Type_create_resized(y_send_vector_t, 0, nn[1] * sizeof(double), &y_padded_vector_t);
+        MPI_Type_commit(&y_padded_vector_t);
 
-        MPI_Type_contiguous(k * nn[1], MPI_DOUBLE, &recv_t);
-        MPI_Type_commit(&recv_t);
+        MPI_Type_contiguous(k * nn[1], MPI_DOUBLE, &y_recv_cont_t);
+        MPI_Type_commit(&y_recv_cont_t);
 
-        MPI_Scatter(B, 1, resized_vector_t, BB, 1, recv_t, 0, comm1d[1]);
+        MPI_Scatter(B, 1, y_padded_vector_t, BB, 1, y_recv_cont_t, 0, comm1d[1]);
 
         dispc = new int[p[0] * p[1]];
         countc = new int[p[0] * p[1]];
@@ -151,53 +138,33 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
             }
         }
 
-        MPI_Type_free(&vector_t);
-        MPI_Type_free(&resized_vector_t);
-        MPI_Type_free(&recv_t);
+        MPI_Type_free(&y_send_vector_t);
+        MPI_Type_free(&y_padded_vector_t);
+        MPI_Type_free(&y_recv_cont_t);
     }
 
     
     MPI_Bcast(AA, nn[0] * k, MPI_DOUBLE, 0, comm1d[1]);
     MPI_Bcast(BB, k * nn[1], MPI_DOUBLE, 0, comm1d[0]);
 
-
     mat_mat_mul(nn[0], nn[1], k, AA, BB, CC);
-    // #define AA(i,j) AA[k*i + j]
-    // #define BB(i,j) BB[nn[1]*i + j]
-    // #define CC(i,j) CC[nn[1]*i + j]
+
+    MPI_Datatype c_recv_vector_t, c_send_vector_t, c_padded_recv_vector_t;
     
-    // for (int i = 0; i < nn[0]; i++) {
-    //     for (int j = 0; j < nn[1]; j++) {
-    //         CC(i, j) = 0.0;
-    //         for (int g = 0; g < k; g++) {
-    //             CC(i, j) += AA(i, g) * BB(g, j);
-    //         }
-    //     }
-    // }
+    MPI_Type_contiguous(nn[0] * nn[1], MPI_DOUBLE, &c_send_vector_t);
+    MPI_Type_commit(&c_send_vector_t);
 
-    // if (rank == 3) {
-    //     for (int i = 0; i < nn[0] * nn[1]; i++) {
-    //         printf("%4f ", CC[i]);
-    //     }
-    //     printf("\n");
-    // }
+    MPI_Type_vector(nn[0], nn[1], n, MPI_DOUBLE, &c_recv_vector_t);
+    MPI_Type_commit(&c_recv_vector_t);
 
-    MPI_Datatype recv_vector_t, send_vector_t, resized_recv_vector_t;
+    MPI_Type_create_resized(c_recv_vector_t, 0, nn[1] * sizeof(double), &c_padded_recv_vector_t);
+    MPI_Type_commit(&c_padded_recv_vector_t);
+
+    MPI_Gatherv(CC, 1, c_send_vector_t, C, countc, dispc, c_padded_recv_vector_t, 0, comm2d);
     
-    MPI_Type_contiguous(nn[0] * nn[1], MPI_DOUBLE, &send_vector_t);
-    MPI_Type_commit(&send_vector_t);
-
-    MPI_Type_vector(nn[0], nn[1], n, MPI_DOUBLE, &recv_vector_t);
-    MPI_Type_commit(&recv_vector_t);
-
-    MPI_Type_create_resized(recv_vector_t, 0, nn[1] * sizeof(double), &resized_recv_vector_t);
-    MPI_Type_commit(&resized_recv_vector_t);
-
-    MPI_Gatherv(CC, 1, send_vector_t, C, countc, dispc, resized_recv_vector_t, 0, comm2d);
-    
-    MPI_Type_free(&recv_vector_t);
-    MPI_Type_free(&resized_recv_vector_t);
-    MPI_Type_free(&send_vector_t);
+    MPI_Type_free(&c_recv_vector_t);
+    MPI_Type_free(&c_padded_recv_vector_t);
+    MPI_Type_free(&c_send_vector_t);
     MPI_Comm_free(&comm1d[0]);
     MPI_Comm_free(&comm1d[1]);
     MPI_Comm_free(&comm2d);
@@ -208,7 +175,6 @@ void mpi_mat_mat_mul(int m, int n, int k, double* A, double* B, double* C, MPI_C
         delete[] dispc;
         delete[] countc;
     }
-    
 }
 
 int main(int argc, char** argv) {    
@@ -239,10 +205,8 @@ int main(int argc, char** argv) {
     if (p_rank == 0) {
         matrix_A = new double[N1*N2];
         fillmat(matrix_A, N1, N2, RAND, 0.);
-        // fill(matrix_A, N1 * N2, 5.);
         matrix_B = new double[N2*N3];
         fillmat(matrix_B, N2, N3, RAND, 0.);
-        // fill(matrix_B, N2 * N3, 5.);
         matrix_C = new double[N1*N3];
         matrix_C1 = new double[N1*N3];
         mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C1);
@@ -251,18 +215,25 @@ int main(int argc, char** argv) {
     }
 
     int p[2] = {P1, P2};
-    
-    mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
-
     if (p_rank == 0) {
-        printmat(matrix_C, N1, N3, "C");
-        printmat(matrix_C1, N1, N3, "C1");
+        start = MPI_Wtime();
+    }
+    mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
+    if (p_rank == 0) {
+        end = MPI_Wtime();
+        printf("DONE: %f\n", end - start);
+    }
+    
+    if (p_rank == 0) {
+        // printmat(matrix_C, N1, N3, "C");
+        // printmat(matrix_C1, N1, N3, "C1");
         for (int i = 0; i < N1*N3; i++) {
             if (fabs(matrix_C[i] - matrix_C1[i]) > 0.0001) {
-                printf("Very bad\n");
+                printf("C1 != C2, program is not correct...\n");
                 break;
             }
         }
+
         delete[] matrix_A;
         delete[] matrix_B;
         delete[] matrix_C;
