@@ -213,26 +213,50 @@ int main(int argc, char** argv) {
         matrix_B = new double[N2*N3];
         fillmat(matrix_B, N2, N3, RAND, 0.);
         matrix_C = new double[N1*N3];
-#ifdef CHECK
+
         matrix_C1 = new double[N1*N3];
+#ifdef CHECK
         // cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nn[0], nn[1], k, 1, AA, k, BB, nn[1], 1, CC, nn[1]);
         mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C1);
 #endif
     }
 
     int p[2] = {P1, P2};
+    double start1, end1;
+    double min = 1000000;
     if (p_rank == 0) {
-        start = MPI_Wtime();
+        start1 = MPI_Wtime();
+
+cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, 
+                N1, N3, N2, 1, matrix_A, N2, matrix_B, N3, 1, matrix_C1, N3);
+
+        end1 = MPI_Wtime();
+        double t = end1 - start1;
+        min = std::min(min, t);
+    }
+    double pres = min;
+
+    min = 1000000;
+    for (int i = 0; i < 3; i++) {
+        if (p_rank == 0) {
+            start = MPI_Wtime();
+        }
+
+        mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
+        
+        if (p_rank == 0) {
+            end = MPI_Wtime();
+            double t = end - start;
+            min = std::min(min, t);
+        }
     }
     
-    mpi_mat_mat_mul(N1, N3, N2, matrix_A, matrix_B, matrix_C, MPI_COMM_WORLD, p);
+
     if (p_rank == 0) {
-        end = MPI_Wtime();
-        printf("%d\t%d\t%d\t%d\t%d\t%d\t", P1*P2, P1, P2, N1, N2, N3);
-        printf("%.2f\n", end - start);
-    }
-    
-    if (p_rank == 0) {
+        printf("%d,%d,%d,%d,%d,%d,", P1*P2, P1, P2, N1, N2, N3);
+        printf("%.2f,", min);
+        printf("%.2f\n", pres);
+        
         // printmat(matrix_C, N1, N3, "C");
         // printmat(matrix_C1, N1, N3, "C1");
         #ifdef CHECK
@@ -243,9 +267,9 @@ int main(int argc, char** argv) {
             }
         }
         printf("checked\n");
-        delete[] matrix_C1;
         #endif
 
+        delete[] matrix_C1;
         delete[] matrix_A;
         delete[] matrix_B;
         delete[] matrix_C;

@@ -9,7 +9,7 @@ base = '''
 # NPC=mpiprocs=select*ncpus
 # 1 <= select <= 2
 
-#PBS -l select={NODES}:ncpus={CPUS}:mpiprocs={NPC}:mem=4000m,place=free
+#PBS -l select={NODES}:ncpus={CPUS}:mpiprocs={NPC}:mem=7000m,place=free
 #PBS -l walltime=01:01:00
 
 source /opt/intel/mkl/10.0.3.020/tools/environment/mklvarsem64t.sh
