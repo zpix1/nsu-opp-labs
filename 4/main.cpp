@@ -5,12 +5,15 @@
 #include <fstream>
 #include <cstdlib>
 #include <mpi.h>
+#include <mpe.h>
 
 const double EPS = 10e-8;
 
-const int Nx = 192 + 2;
-const int Ny = 192 + 2;
-const int Nz = 192 + 2;
+const int K = 3;
+
+const int Nx = 144*K + 2;
+const int Ny = 144*K + 2;
+const int Nz = 144*K + 2;
 
 const double Dx = 2;
 const double Dy = 2;
@@ -135,12 +138,12 @@ void solve(double* ans) {
     int below_proc = p_rank - 1;
     int above_proc = p_rank + 1 == p_count ? -1 : p_rank + 1;
 
-    std::cout << "I am " << p_rank << "; Upper me " << above_proc << "; Down me " << below_proc << std::endl;
+    // std::cout << "I am " << p_rank << "; Upper me " << above_proc << "; Down me " << below_proc << std::endl;
     
     int stop_iteration = 0;
     for (int i = 0; !stop_iteration; i++) {
-        if (p_rank == 0)
-            DEBUG(i);
+        // if (p_rank == 0)
+        //     DEBUG(i);
 
         MPI_Request sent_top_req, sent_bottom_req, got_top_req, got_bottom_req;
 
@@ -216,11 +219,13 @@ void solve(double* ans) {
         }
     }
 
+    #ifdef CHECK
     if (p_rank == 0) {
         print_ans(bottomlayer, 0, 1);
         print_ans(baselayer, 1, STEP + 1);
-        print_ans(toplayer, STEP+1, STEP+2);
+        print_ans(toplayer, STEP + 1, STEP + 2);
     }
+    #endif
     
     MPI_Gather(newbaselayer, STEP*ZSTRIDE, MPI_DOUBLE, ans, STEP*ZSTRIDE, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
@@ -234,6 +239,7 @@ int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
     MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
+    MPE_Init_log();
     
     double begin, end;
 
@@ -248,10 +254,9 @@ int main(int argc, char** argv) {
     
     if (p_rank == 0) {
         end = MPI_Wtime();
-        std::cout << "DONE: " << end - begin << std::endl;
-        // print_ans(ans);
+        std::cout << p_count << "," << end - begin << std::endl;
         delete[] ans;
     }
-
+    MPE_Finish_log("main1mpe");
     MPI_Finalize();
 }
