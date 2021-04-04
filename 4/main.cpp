@@ -8,9 +8,9 @@
 
 const double EPS = 10e-8;
 
-const int Nx = 4;
-const int Ny = 4;
-const int Nz = 4;
+const int Nx = 192 + 2;
+const int Ny = 192 + 2;
+const int Nz = 192 + 2;
 
 const double Dx = 2;
 const double Dy = 2;
@@ -43,7 +43,7 @@ inline double phi(int i, int j, int k) {
     return xi*xi + yi*yi + zi*zi;
 }
 
-inline double ro(int i, int j, int k) {
+inline double rho(int i, int j, int k) {
     return 6 - a * phi(i, j, k);
 }
 
@@ -62,34 +62,43 @@ inline double jacobi(int i, int j, int k, double* bottom, double* cur, double* n
     double phi_k_m1 = bottom[i + j * Nx];
 
 
-    double down = 2 * (1 / Hx*Hx + 1 / Hy*Hy + 1 / Hz*Hz) + a;
+    double denom = 2 * (1 / (Hx*Hx) + 1 / (Hy*Hy) + 1 / (Hz*Hz)) + a;
 
-    double up = (phi_i_p1 + phi_i_m1) / (Hx * Hx) + \
-                (phi_j_p1 + phi_j_m1) / (Hy * Hy) + \
-                (phi_k_p1 + phi_k_m1) / (Hz * Hz) - ro(i, j, k);
-    double res = up / down;
+    double numer =  (phi_i_p1 + phi_i_m1) / (Hx * Hx) +
+                    (phi_j_p1 + phi_j_m1) / (Hy * Hy) +
+                    (phi_k_p1 + phi_k_m1) / (Hz * Hz) - rho(i, j, k);
+
+    double res = numer / denom;
 
     // if (res < 0.01) {
     //     DEBUG_PRINT("res is small");
-        DEBUG(res);
+        // DEBUG(res);
+        // DEBUG(phi_i_p1);
+        // DEBUG(phi_j_p1);
+        // DEBUG(phi_k_p1);
+        // DEBUG(phi_i_m1);
+        // DEBUG(phi_j_m1);
+        // DEBUG(phi_k_m1);
     // }
 
     return res;
 }
 
-void print_ans(double* ans) {
+void print_ans(double* ans, int k0, int k1) {
     if (p_rank == 0) {
+        for (int k = 0; k < k1 - k0; k++) {
         for (int i = 0; i < Nx; i++) {
             for (int j = 0; j < Ny; j++) {
-                for (int k = 0; k < Nz; k++) {
                     double xi = x0 + i * Hx;
                     double yi = y0t + j * Hy;
-                    double zi = z0 + k * Hz;
+                    double zi = z0 + (k + k0) * Hz;
 
                     double got = ans[k * Nx * Ny + i + j * Nx];
-                    double should = phi(i, j, k);
-
-                    printf("%.2lf, %.2lf, %.2lf:\t |%lf - %lf| = %lf\n", xi, yi, zi, got, should, fabs(got-should));
+                    double should = phi(i, j, k+k0);
+                    double err =  fabs(got-should);
+                    if (err > 10e-5 || Nx < 10) {
+                        printf("%9.2lg, %9.2lg, %9.2lg:\t |%9.2lg - %9.2lg| = %lg\n", xi, yi, zi, got, should, fabs(got-should));
+                    }
                 }
             }
         }
@@ -98,103 +107,119 @@ void print_ans(double* ans) {
 
 // ans should be Nx * Ny * Nz length
 void solve(double* ans) {
-    const int STEP = Nz / p_count;
+    const int STEP = (Nz-2) / p_count;
     // z coordinate
     const int BASE = STEP * p_rank;
     const int ZSTRIDE = Nx * Ny;
 
-    double* toplayer = new double[ZSTRIDE];
-    double* bottomlayer = new double[ZSTRIDE];
+    double* toplayer = new double[ZSTRIDE]();
+    double* bottomlayer = new double[ZSTRIDE]();
 
     for (int x = 0; x < Nx; x++) {
         for (int y = 0; y < Ny; y++) {
-            toplayer[x + Nx*y] = phi(x, y, BASE + STEP - 1);
-            bottomlayer[x + Nx*y] = phi(x, y, BASE);
+            if (p_rank == p_count - 1)
+                toplayer[x + Nx*y] = phi(x, y, Nz - 1);
+            else
+                toplayer[x + Nx*y] = 0;
+            
+            if (p_rank == 0)
+                bottomlayer[x + Nx*y] = phi(x, y, 0);
+            else
+                bottomlayer[x + Nx*y] = 0;
         }
     }
 
-    double* baselayer = new double[STEP * ZSTRIDE];
-    double* newbaselayer = new double[STEP * ZSTRIDE];
+    double* baselayer = new double[STEP * ZSTRIDE]();
+    double* newbaselayer = new double[STEP * ZSTRIDE]();
 
-    int recv_from = p_rank - 1;
-    int send_to = p_rank + 1 == p_count ? -1 : p_rank + 1;
+    int below_proc = p_rank - 1;
+    int above_proc = p_rank + 1 == p_count ? -1 : p_rank + 1;
 
-    std::cout << "I am " << p_rank << "; I send to " << send_to << "; I recv from " << recv_from << std::endl;
+    std::cout << "I am " << p_rank << "; Upper me " << above_proc << "; Down me " << below_proc << std::endl;
     
-    int flag = 1;
-    for (int i = 0; flag; i++) {
+    int stop_iteration = 0;
+    for (int i = 0; !stop_iteration; i++) {
         if (p_rank == 0)
             DEBUG(i);
 
-        MPI_Request req_bottom, req_top;
+        MPI_Request sent_top_req, sent_bottom_req, got_top_req, got_bottom_req;
 
+    
         // for base
         for (int x = 0; x < Nx; x++) {
             for (int y = 0; y < Ny; y++) {
-                newbaselayer[x + y * Nx] = jacobi(  x, y, BASE, 
+                newbaselayer[x + y * Nx] = jacobi(  x, y, BASE + 1, 
                                                     bottomlayer, 
                                                     baselayer, 
-                                                    baselayer + ZSTRIDE);
+                                                    STEP > 1 ? baselayer + ZSTRIDE : toplayer);
             }
         }
 
         // for base + STEP - 1
         for (int x = 0; x < Nx; x++) {
             for (int y = 0; y < Ny; y++) {
-                newbaselayer[(STEP - 1) * ZSTRIDE + x + y * Nx] = jacobi(   x, y, BASE + STEP - 1, 
-                                                                            baselayer + (STEP - 2) * ZSTRIDE, 
+                newbaselayer[(STEP - 1) * ZSTRIDE + x + y * Nx] = jacobi(   x, y, BASE + STEP - 0, 
+                                                                            STEP > 1 ? baselayer + (STEP - 2) * ZSTRIDE : bottomlayer, 
                                                                             baselayer + (STEP - 1) * ZSTRIDE, 
                                                                             toplayer);
             }
         }
 
-
         // async send base and base + STEP - 1
-        if (send_to != -1) {
-            MPI_Isend(newbaselayer, ZSTRIDE, MPI_DOUBLE, send_to, 0, MPI_COMM_WORLD, &req_bottom);
-            MPI_Isend(newbaselayer + (STEP - 1) * ZSTRIDE, ZSTRIDE, MPI_DOUBLE, send_to, 1, MPI_COMM_WORLD, &req_top);
+        if (below_proc != -1) {
+            MPI_Irecv(bottomlayer, ZSTRIDE, MPI_DOUBLE, below_proc, 1, MPI_COMM_WORLD, &got_bottom_req);
+            MPI_Isend(newbaselayer, ZSTRIDE, MPI_DOUBLE, below_proc, 0, MPI_COMM_WORLD, &sent_bottom_req);
+        }
+        if (above_proc != -1) {
+            MPI_Irecv(toplayer, ZSTRIDE, MPI_DOUBLE, above_proc, 0, MPI_COMM_WORLD, &got_top_req);
+            MPI_Isend(newbaselayer + (STEP - 1) * ZSTRIDE, ZSTRIDE, MPI_DOUBLE, above_proc, 1, MPI_COMM_WORLD, &sent_top_req);
         }
 
         // calc center
-        for (int z = BASE + 1; z < BASE - 1; z++) {
+        for (int dz = 1; dz < STEP - 1; dz++) {
             for (int x = 0; x < Nx; x++) {
                 for (int y = 0; y < Ny; y++) {
-                    newbaselayer[(z - BASE) * ZSTRIDE + x + y * Nx] = jacobi(   x, y, z, 
-                                                                                baselayer + (z - BASE - 1) * ZSTRIDE, 
-                                                                                baselayer + (z - BASE) * ZSTRIDE, 
-                                                                                baselayer + (z - BASE + 1) * ZSTRIDE);
+                    newbaselayer[dz * ZSTRIDE + x + y * Nx] = jacobi(   x, y, BASE + dz + 1, 
+                                                                        baselayer + (dz - 1) * ZSTRIDE, 
+                                                                        baselayer + (dz + 0) * ZSTRIDE, 
+                                                                        baselayer + (dz + 1) * ZSTRIDE);
                 }
             }
         }
 
-        double max = 0;
-        if (p_rank == 0) {
-            print_ans(newbaselayer);
-            for (int i = 0; i < STEP * ZSTRIDE; i++) {
-                if (fabs(baselayer[i] - newbaselayer[i]) > max) {
-                    max = fabs(baselayer[i] - newbaselayer[i]);
-                }
-                baselayer[i] = newbaselayer[i];
-            }
-            if (max < EPS) {
-                flag = 0;
-            }
-        } else {
-            for (int i = 0; i < STEP * ZSTRIDE; i++) {
-                baselayer[i] = newbaselayer[i];
+
+        int converges = 1;
+
+        for (int i = 0; i < STEP * ZSTRIDE; i++) {
+            if (fabs(baselayer[i] - newbaselayer[i]) > EPS) {
+                converges = 0;
+                break;
             }
         }
-
-        MPI_Bcast(&flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-        // receive next toplayer and next bottomlayer
-        if (recv_from != -1) {
-            MPI_Irecv(toplayer, ZSTRIDE, MPI_DOUBLE, recv_from, 0, MPI_COMM_WORLD, &req_bottom);
-            MPI_Irecv(bottomlayer, ZSTRIDE, MPI_DOUBLE, recv_from, 1, MPI_COMM_WORLD, &req_top);
-
-            MPI_Wait(&req_bottom, MPI_STATUS_IGNORE);
-            MPI_Wait(&req_top, MPI_STATUS_IGNORE);
+        
+        if (below_proc != -1) {
+            MPI_Wait(&sent_bottom_req, MPI_STATUS_IGNORE);
         }
+        if (above_proc != -1) {
+            MPI_Wait(&sent_top_req, MPI_STATUS_IGNORE);
+        }
+
+        std::swap(newbaselayer, baselayer);
+
+        MPI_Allreduce(&converges, &stop_iteration, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
+
+        if (below_proc != -1) {
+            MPI_Wait(&got_bottom_req, MPI_STATUS_IGNORE);
+        }
+        if (above_proc != -1) {
+            MPI_Wait(&got_top_req, MPI_STATUS_IGNORE);
+        }
+    }
+
+    if (p_rank == 0) {
+        print_ans(bottomlayer, 0, 1);
+        print_ans(baselayer, 1, STEP + 1);
+        print_ans(toplayer, STEP+1, STEP+2);
     }
     
     MPI_Gather(newbaselayer, STEP*ZSTRIDE, MPI_DOUBLE, ans, STEP*ZSTRIDE, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -224,7 +249,7 @@ int main(int argc, char** argv) {
     if (p_rank == 0) {
         end = MPI_Wtime();
         std::cout << "DONE: " << end - begin << std::endl;
-        print_ans(ans);
+        // print_ans(ans);
         delete[] ans;
     }
 
