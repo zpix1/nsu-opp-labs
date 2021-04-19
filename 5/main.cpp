@@ -17,13 +17,28 @@ void task_distributor() {
 }
 
 void receiver() {
-    while(1) {
-        no_tasks_left.lock();
+    while (1) {
+        list_mutex.lock();
+        // MPI_Send()
+        // MPI_Recv()
+        list_mutex.unlock();
     }
 }
 
 void worker() {
+    while (true) {
+        // TODO: add list size mutex
+        while (task_list.size() != 0) {
+            list_mutex.lock();
+            int task = task_list.pop();
+            list_mutex.unlock();
+            do_task(task);
+        }
+    }
+}
 
+void do_task(int task) {
+    // 
 }
 
 int main(int argc, char** argv) {
