@@ -17,23 +17,34 @@ void task_distributor() {
 }
 
 void receiver() {
-    while (1) {
+    for (int iteration = 0; iteration < 100; iteration++) {
         list_mutex.lock();
-        // MPI_Send()
-        // MPI_Recv()
+        for (int i = 0; i < 10; i++) {
+            task_list.push_back(rand());
+        }
         list_mutex.unlock();
+
+        while (1) {
+            no_tasks_left.lock();
+            list_mutex.lock();
+            // MPI_Send()
+            // MPI_Recv()
+            list_mutex.unlock();
+            no_tasks_left.unlock();
+        }
     }
 }
 
 void worker() {
     while (true) {
-        // TODO: add list size mutex
+        no_tasks_left.lock();
         while (task_list.size() != 0) {
             list_mutex.lock();
             int task = task_list.pop();
             list_mutex.unlock();
             do_task(task);
         }
+        no_tasks_left.unlock();
     }
 }
 
@@ -59,8 +70,6 @@ int main(int argc, char** argv) {
     } else {
 
     }
-
-
 
     MPI_Finalize();
     
