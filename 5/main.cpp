@@ -23,7 +23,7 @@ std::vector<int> task_list;
 bool all_done = false;
 
 #define ITER_COUNT 10
-#define TASKS_PER_ITER 14400
+#define TASKS_PER_ITER 144
 #define ROOT 0
 #define MESSAGE_END_ITERATION -1
 #define MESSAGE_WHAT_TO_DO -2
@@ -32,7 +32,7 @@ bool all_done = false;
             do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
 
 int get_random_task() {
-    return rand() % 1000;
+    return 1000000;
 }
 
 void task_distributor() {
@@ -42,13 +42,9 @@ void task_distributor() {
             int message;
             MPI_Status status;
             MPI_Recv(&message, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-            if (message > 0) {
-                DEBUG(message);
-                DEBUG(status.MPI_SOURCE);
-            } else
             if (message == MESSAGE_WHAT_TO_DO) {
                 int send_message = get_random_task() * (status.MPI_SOURCE + 1);
-                MPI_Send(&send_message, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
+                MPI_Send(&send_message, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
             } else {
                 // no other message types allowed
                 assert(false);
@@ -62,7 +58,7 @@ void task_distributor() {
 
             if (message == MESSAGE_WHAT_TO_DO) {
                 int send_message = MESSAGE_END_ITERATION;
-                MPI_Send(&send_message, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
+                MPI_Send(&send_message, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
             } else {
                 assert(false);
             }
@@ -87,7 +83,7 @@ void receiver() {
 
             // Listen for answer
             int message;
-            MPI_Recv(&message, 1, MPI_INT, ROOT, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&message, 1, MPI_INT, ROOT, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             // It's a task
             if (message > 0) {
@@ -115,7 +111,7 @@ void do_task(int task) {
 }
 
 void worker() {
-    int tasks_done = 0;
+    long long tasks_done = 0;
     while (!all_done) {
         no_tasks_left.lock();
         while (task_list.size() != 0) {
@@ -123,7 +119,7 @@ void worker() {
             int task = task_list.back();
             task_list.pop_back();
             list_mutex.unlock();
-            tasks_done++;
+            tasks_done += task;
             do_task(task);
         }
         no_tasks_left.unlock();
@@ -132,6 +128,7 @@ void worker() {
 }
 
 int main(int argc, char** argv) {
+    double start, end;
     int provided = 0;
 
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
@@ -152,6 +149,7 @@ int main(int argc, char** argv) {
     std::thread task_distributor_thread;
     
     if (p_rank == ROOT) {
+        start = MPI_Wtime();
         task_distributor_thread = std::thread(task_distributor);
     }
 
@@ -159,11 +157,18 @@ int main(int argc, char** argv) {
     std::thread worker_thread(worker);
     
     if (p_rank == 0) {
+        end = MPI_Wtime();
         task_distributor_thread.join();
     }
 
     receiver_thread.join();
     worker_thread.join();
+
+    
+    if (p_rank == 0) {
+        end = MPI_Wtime();
+        std::cout << end - start << std::endl;
+    }
 
     #ifdef MPE
     MPE_Finish_log("mainmpe");

@@ -3,7 +3,7 @@
 # NPC=mpiprocs=select*ncpus
 # 1 <= select <= 2
 
-#PBS -l select=1:ncpus=1:mpiprocs=1:mem=4000m,place=free:exclhost
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=4000m,place=free:exclhost
 #PBS -l walltime=01:01:00
 
 export MPE_HOME=$HOME/mpe2-nusc-built
