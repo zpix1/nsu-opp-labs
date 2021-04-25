@@ -1,5 +1,9 @@
 #include <mpi.h>
 
+#ifdef MPE
+#include <mpe.h>
+#endif
+
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -19,8 +23,7 @@ std::vector<int> task_list;
 bool all_done = false;
 
 #define ITER_COUNT 10
-#define TASKS_PER_ITER 144
-// TASKS_PER_ITER % p_count == 0
+#define TASKS_PER_ITER 14400
 #define ROOT 0
 #define MESSAGE_END_ITERATION -1
 #define MESSAGE_WHAT_TO_DO -2
@@ -29,7 +32,7 @@ bool all_done = false;
             do { std::cout << p_rank << " has " << #var << ": " << var << std::endl; } while (0)
 
 int get_random_task() {
-    return rand() % 1000000;
+    return rand() % 1000;
 }
 
 void task_distributor() {
@@ -134,9 +137,9 @@ int main(int argc, char** argv) {
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     MPI_Comm_rank(MPI_COMM_WORLD, &p_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &p_count);
-
-    // checks
-    assert(TASKS_PER_ITER % p_count == 0);
+    #ifdef MPE
+    MPE_Init_log();
+    #endif
 
     
     if (provided != MPI_THREAD_MULTIPLE) {
@@ -162,6 +165,9 @@ int main(int argc, char** argv) {
     receiver_thread.join();
     worker_thread.join();
 
+    #ifdef MPE
+    MPE_Finish_log("mainmpe");
+    #endif
     MPI_Finalize();
     
     return 0;
