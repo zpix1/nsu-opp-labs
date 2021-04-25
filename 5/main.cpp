@@ -12,10 +12,13 @@ int p_count;
 
 std::mutex list_mutex;
 std::mutex no_tasks_left;
+std::mutex end_iteration;
 
 std::vector<int> task_list;
 
-#define ITER_COUNT 1
+bool all_done = false;
+
+#define ITER_COUNT 10
 #define TASKS_PER_ITER 144
 // TASKS_PER_ITER % p_count == 0
 #define ROOT 0
@@ -41,7 +44,7 @@ void task_distributor() {
                 DEBUG(status.MPI_SOURCE);
             } else
             if (message == MESSAGE_WHAT_TO_DO) {
-                int send_message = get_random_task();
+                int send_message = get_random_task() * (status.MPI_SOURCE + 1);
                 MPI_Send(&send_message, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
             } else {
                 // no other message types allowed
@@ -97,6 +100,7 @@ void receiver() {
         }
         MPI_Barrier(MPI_COMM_WORLD);
     }
+    all_done = true;
 }
 
 
@@ -108,18 +112,20 @@ void do_task(int task) {
 }
 
 void worker() {
-    while (true) {
-        DEBUG("worker");
+    int tasks_done = 0;
+    while (!all_done) {
         no_tasks_left.lock();
         while (task_list.size() != 0) {
             list_mutex.lock();
             int task = task_list.back();
             task_list.pop_back();
             list_mutex.unlock();
+            tasks_done++;
             do_task(task);
         }
         no_tasks_left.unlock();
     }
+    std::cout << p_rank << " has done " << tasks_done << std::endl;
 }
 
 int main(int argc, char** argv) {
